@@ -21,6 +21,8 @@ export function ChatProvider({ children }) {
   const [locationError, setLocationError] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [history, setHistory] = useState([]);
+  const [showDietaryModal, setShowDietaryModal] = useState(true);
+  const [dietaryRestrictions, setDietaryRestrictionsState] = useState(null);
 
   // --- SESSION AND GEOLOCATION LOGIC ---
   useEffect(() => {
@@ -67,6 +69,31 @@ export function ChatProvider({ children }) {
     );
   }, []);
 
+  // --- DIETARY RESTRICTIONS HANDLER ---
+  const setDietaryRestrictions = useCallback(async (restrictions) => {
+    if (!sessionId) return;
+    
+    setDietaryRestrictionsState(restrictions);
+    setShowDietaryModal(false);
+    
+    // Send dietary restrictions to backend
+    if (restrictions) {
+      try {
+        await fetch(`${backendUrl}/chat/dietary-restrictions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            sessionId, 
+            restrictions 
+          }),
+        });
+        console.log("Dietary restrictions saved:", restrictions);
+      } catch (error) {
+        console.error("Failed to save dietary restrictions:", error);
+      }
+    }
+  }, [sessionId]);
+
   // --- MESSAGE QUEUE MANAGEMENT ---
   const onMessagePlayed = () => {
     setMessages((msgs) => msgs.slice(1));
@@ -102,6 +129,7 @@ export function ChatProvider({ children }) {
         location,
         sessionId,
         history,
+        dietaryRestrictions: dietaryRestrictions,
       };
 
       if (image) {
@@ -129,7 +157,7 @@ export function ChatProvider({ children }) {
         setLoading(false);
       }
     },
-    [location, sessionId, history]
+    [location, sessionId, history, dietaryRestrictions]
   );
 
   return (
@@ -142,6 +170,8 @@ export function ChatProvider({ children }) {
         cameraZoomed,
         setCameraZoomed,
         locationError,
+        showDietaryModal,
+        setDietaryRestrictions,
       }}
     >
       {children}
@@ -156,3 +186,4 @@ export const useChat = () => {
   }
   return ctx;
 };
+  

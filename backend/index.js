@@ -21,7 +21,7 @@ app.use(cors());
 const port = 3000;
 
 // --- Chat Sessions Storage ---------
-const chatSessions = new Map(); // sessionId -> { history: [], location: null, lastActivity: timestamp }
+const chatSessions = new Map(); // sessionId -> { history: [], location: null, dietaryRestrictions: null, lastActivity: timestamp }
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 // Clean up old sessions periodically
@@ -54,7 +54,7 @@ const lipSyncMessage = async (idx, sessionId = 'default') => {
 };
 
 // --- Get or create chat session ---
-const getOrCreateSession = (sessionId, location = null) => {
+const getOrCreateSession = (sessionId, location = null, dietaryRestrictions = null) => {
   if (!chatSessions.has(sessionId)) {
     chatSessions.set(sessionId, {
       history: [
@@ -77,14 +77,18 @@ const getOrCreateSession = (sessionId, location = null) => {
         },
       ],
       location: location,
+      dietaryRestrictions: dietaryRestrictions,
       lastActivity: Date.now(),
     });
   } else {
-    // Update last activity and location if provided
+    // Update last activity and data if provided
     const session = chatSessions.get(sessionId);
     session.lastActivity = Date.now();
     if (location) {
       session.location = location;
+    }
+    if (dietaryRestrictions) {
+      session.dietaryRestrictions = dietaryRestrictions;
     }
   }
   return chatSessions.get(sessionId);
@@ -98,6 +102,25 @@ app.get("/", (req, res) => res.send("Hello World!"));
 // List available ElevenLabs voices
 app.get("/voices", async (req, res) => {
   res.send(await voice.getVoices(elevenLabsApiKey));
+});
+
+// Set dietary restrictions for a session
+app.post("/chat/dietary-restrictions", (req, res) => {
+  const { sessionId, restrictions } = req.body;
+  
+  if (!sessionId || !restrictions) {
+    return res.status(400).json({ error: "Session ID and restrictions are required" });
+  }
+  
+  // Get or create session with dietary restrictions
+  const session = getOrCreateSession(sessionId, null, restrictions);
+  
+  console.log(`Dietary restrictions set for session ${sessionId}:`, restrictions);
+  
+  res.json({ 
+    message: "Dietary restrictions saved successfully", 
+    sessionId: sessionId 
+  });
 });
 
 // Get chat history for a session
@@ -134,7 +157,10 @@ app.post("/chat", async (req, res) => {
   const location = req.body.location;
   const sessionId = req.body.sessionId || `session_${Date.now()}`;
   const image = req.body.image; // This will contain the image data from frontend
-  const session = getOrCreateSession(sessionId, location);
+  const dietaryRestrictions = req.body.dietaryRestrictions;
+  const session = getOrCreateSession(sessionId, location, dietaryRestrictions);
+
+  console.log(`Session ${sessionId} dietary restrictions:`, session.dietaryRestrictions);
 
   // API keys check
   if (!elevenLabsApiKey || !process.env.GEMINI_API_KEY || !process.env.GOOGLE_MAPS_API_KEY) {
@@ -234,6 +260,11 @@ app.post("/chat", async (req, res) => {
     ? `User's message: "${userMessage}"`
     : "The user has sent you an image or is greeting you.";
 
+  // Add dietary restrictions context
+  const dietaryRestrictionsPrompt = session.dietaryRestrictions 
+    ? `DIETARY RESTRICTIONS: The user has the following dietary restrictions/preferences: ${session.dietaryRestrictions}. When recommending restaurants, food experiences, or travel destinations, always consider these restrictions. However, DO NOT mention or repeat these restrictions in your responses unless the user specifically asks about them.`
+    : "";
+
   const fullPrompt = `You are a friendly travel agent with memory of our conversation.
 
 Always reply with a valid JSON object: {"messages": [{"text": "...", "facialExpression": "...", "animation": "..."}]}.
@@ -245,6 +276,8 @@ ${currentLocationPrompt}
 
 ${imagePrompt}
 
+${dietaryRestrictionsPrompt}
+
 ${textPrompt}
 
 CRITICAL INSTRUCTION: If the user shares an image of a place:
@@ -253,7 +286,7 @@ CRITICAL INSTRUCTION: If the user shares an image of a place:
 3. If they're asking about the place in the image itself, focus on that destination
 4. Don't keep it too long.
 
-Be enthusiastic and helpful, but always maintain clarity about location context!`;
+Be enthusiastic and helpful, but always maintain clarity about location context! When making food recommendations, silently consider their dietary restrictions without mentioning them unless asked.`;
 
   try {
     const result = await chatSession.sendMessage(fullPrompt);

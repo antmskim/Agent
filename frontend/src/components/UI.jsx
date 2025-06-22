@@ -1,10 +1,20 @@
 import { useRef, useState } from "react";
 import { useChat } from "../hooks/useChat";
+import { DietaryRestrictionsModal } from "./DietaryRestrictionsModal";
 
 export const UI = ({ hidden, ...props }) => {
   const input = useRef();
   const fileInputRef = useRef();
-  const { chat, loading, cameraZoomed, setCameraZoomed, message, locationError } = useChat();
+  const { 
+    chat, 
+    loading, 
+    cameraZoomed, 
+    setCameraZoomed, 
+    message, 
+    locationError,
+    showDietaryModal,
+    setDietaryRestrictions
+  } = useChat();
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -61,12 +71,23 @@ export const UI = ({ hidden, ...props }) => {
     }
   };
 
+  const handleDietarySubmit = (restrictions) => {
+    setDietaryRestrictions(restrictions);
+  };
+
   if (hidden) {
     return null;
   }
 
   return (
     <>
+      {/* Dietary Restrictions Modal */}
+      <DietaryRestrictionsModal
+        isOpen={showDietaryModal}
+        onClose={() => setDietaryRestrictions("")}
+        onSubmit={handleDietarySubmit}
+      />
+
       {/* Location Error Display */}
       {locationError && (
         <div className="fixed top-16 left-0 right-0 z-20 flex justify-center">
